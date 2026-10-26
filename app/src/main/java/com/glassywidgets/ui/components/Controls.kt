@@ -117,7 +117,7 @@ fun AlignGlyph(align: ElemAlign, color: Color) {
 /** Selector visual de distribución: una columna o dos columnas. */
 @Composable
 fun LayoutPicker(selected: LayoutMode, onSelect: (LayoutMode) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         LayoutMode.entries.forEach { mode ->
             val sel = mode == selected
             val cs = MaterialTheme.colorScheme
@@ -137,12 +137,17 @@ fun LayoutPicker(selected: LayoutMode, onSelect: (LayoutMode) -> Unit) {
                         .background(cs.onSurface.copy(alpha = 0.08f)).padding(6.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    val n = if (mode == LayoutMode.SPLIT) 2 else 1
-                    repeat(n) {
-                        Box(
-                            Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(6.dp))
-                                .background(if (sel) cs.primary.copy(alpha = 0.55f) else cs.onSurface.copy(alpha = 0.22f)),
-                        )
+                    val fill = if (sel) cs.primary.copy(alpha = 0.55f) else cs.onSurface.copy(alpha = 0.22f)
+                    if (mode == LayoutMode.FREE) {
+                        Box(Modifier.weight(1f).height(42.dp)) {
+                            Box(Modifier.align(Alignment.TopStart).size(26.dp, 12.dp).clip(RoundedCornerShape(4.dp)).background(fill))
+                            Box(Modifier.align(Alignment.Center).size(16.dp).clip(RoundedCornerShape(8.dp)).background(fill))
+                            Box(Modifier.align(Alignment.BottomEnd).size(34.dp, 10.dp).clip(RoundedCornerShape(4.dp)).background(fill))
+                        }
+                    } else {
+                        repeat(if (mode == LayoutMode.SPLIT) 2 else 1) {
+                            Box(Modifier.weight(1f).height(42.dp).clip(RoundedCornerShape(6.dp)).background(fill))
+                        }
                     }
                 }
                 Spacer(Modifier.height(8.dp))

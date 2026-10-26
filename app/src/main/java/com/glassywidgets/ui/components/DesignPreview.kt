@@ -49,6 +49,13 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -104,6 +111,10 @@ private class PCtx(
     val materialYou: Boolean,
     val selectedId: String?,
     val onSelect: ((String) -> Unit)?,
+    val innerW: Float,
+    val innerH: Float,
+    val onTransform: ((String, Float, Float, Float) -> Unit)?,
+    val onGestureEnd: (() -> Unit)?,
 )
 
 /**
@@ -118,6 +129,12 @@ fun DesignPreview(
     modifier: Modifier = Modifier,
     selectedId: String? = null,
     onSelect: ((String) -> Unit)? = null,
+    /** Modo libre: (id, dx, dy en fracción del área, zoom). */
+    onTransform: ((String, Float, Float, Float) -> Unit)? = null,
+    onGestureEnd: (() -> Unit)? = null,
+    guideX: Float? = null,
+    guideY: Float? = null,
+    showGrid: Boolean = false,
 ) {
     BoxWithConstraints(modifier) {
         val context = LocalContext.current
@@ -128,9 +145,11 @@ fun DesignPreview(
         val bitmap = remember(bgKey, wDp, hDp) {
             if (materialYou) null else GlassPainter.render(context, wDp, hDp, design).asImageBitmap()
         }
+        val (iw, ih) = DesignLogic.innerSize(design, wDp, hDp)
         val c = PCtx(
             design, weather, SystemInfo.PREVIEW, DateFormat.is24HourFormat(context),
             DesignLogic.scale(design, wDp, hDp, weather), materialYou, selectedId, onSelect,
+            iw, ih, onTransform, onGestureEnd,
         )
         val geo = DesignLogic.geometry(design, wDp)
         val cols = DesignLogic.columns(design)
@@ -145,7 +164,32 @@ fun DesignPreview(
             bitmap?.let {
                 Image(it, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
             }
-            if (design.layout == LayoutMode.SINGLE) {
+            if (design.layout == LayoutMode.FREE) {
+                Box(Modifier.fillMaxSize().padding(design.padding.dp)) {
+                    if (showGrid || guideX != null || guideY != null) {
+                        val gc = MaterialTheme.colorScheme.primary
+                        Canvas(Modifier.fillMaxSize()) {
+                            if (showGrid) {
+                                for (f in listOf(0.25f, 0.5f, 0.75f)) {
+                                    drawLine(Color.White.copy(alpha = 0.18f), Offset(size.width * f, 0f), Offset(size.width * f, size.height), 1f)
+                                    drawLine(Color.White.copy(alpha = 0.18f), Offset(0f, size.height * f), Offset(size.width, size.height * f), 1f)
+                                }
+                            }
+                            guideX?.let { drawLine(gc, Offset(size.width * it, -40f), Offset(size.width * it, size.height + 40f), 2f) }
+                            guideY?.let { drawLine(gc, Offset(-40f, size.height * it), Offset(size.width + 40f, size.height * it), 2f) }
+                        }
+                    }
+                    design.elements.forEach { e ->
+                        val ins = DesignLogic.freeInsets(e, iw, ih)
+                        Box(
+                            Modifier.fillMaxSize().padding(start = ins.start.dp, top = ins.top.dp, end = ins.end.dp, bottom = ins.bottom.dp),
+                            contentAlignment = freeAlign(e),
+                        ) {
+                            PElement(e, c, e.w * iw, e.w * iw, e.h * ih)
+                        }
+                    }
+                }
+            } else if (design.layout == LayoutMode.SINGLE) {
                 PColumn(cols[0], c, geo.widths[0], design.align, design.vAlign, Modifier.fillMaxSize().padding(design.padding.dp))
             } else {
                 Row(Modifier.fillMaxSize().padding(design.padding.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -160,6 +204,12 @@ fun DesignPreview(
             }
         }
     }
+}
+
+private fun freeAlign(e: WidgetElement): Alignment = when (e.anchorV) {
+    VAlign.TOP -> when (e.anchorH) { HAlign.START -> Alignment.TopStart; HAlign.CENTER -> Alignment.TopCenter; HAlign.END -> Alignment.TopEnd }
+    VAlign.CENTER -> when (e.anchorH) { HAlign.START -> Alignment.CenterStart; HAlign.CENTER -> Alignment.Center; HAlign.END -> Alignment.CenterEnd }
+    VAlign.BOTTOM -> when (e.anchorH) { HAlign.START -> Alignment.BottomStart; HAlign.CENTER -> Alignment.BottomCenter; HAlign.END -> Alignment.BottomEnd }
 }
 
 @Composable
@@ -178,7 +228,7 @@ private fun colorFor(e: WidgetElement, c: PCtx): Color {
             ColorRole.ACCENT -> cs.primary
             ColorRole.MUTED -> cs.onSurfaceVariant
             else -> cs.onSurface
-        }
+        }.let { it.copy(alpha = it.alpha * e.alpha) }
     } else {
         Color(DesignLogic.colorArgb(e, c.design))
     }
@@ -206,12 +256,12 @@ private fun PColumn(elements: List<WidgetElement>, c: PCtx, colW: Float, hAlign:
 @Composable
 private fun PRow(row: List<WidgetElement>, c: PCtx, colW: Float) {
     if (row.size == 1) {
-        PElement(row[0], c, colW)
+        PElement(row[0], c, colW, row[0].w * colW, row[0].h * c.innerH)
     } else {
         Row(verticalAlignment = Alignment.CenterVertically) {
             row.forEachIndexed { i, e ->
                 if (i > 0) Spacer(Modifier.width((8 * c.scale).dp))
-                PElement(e, c, colW)
+                PElement(e, c, colW, e.w * colW, e.h * c.innerH)
             }
         }
     }
@@ -228,16 +278,42 @@ private fun textStyle(color: Color, sizeSp: Float, e: WidgetElement, tight: Bool
 )
 
 @Composable
-private fun PElement(e: WidgetElement, c: PCtx, colW: Float) {
+private fun PElement(e: WidgetElement, c: PCtx, colW: Float, boxW: Float, boxH: Float) {
     val selected = c.selectedId == e.id
     val primary = MaterialTheme.colorScheme.primary
+    val density = LocalDensity.current
+    val transform = c.onTransform
     val selectable = Modifier
         .then(
-            if (c.onSelect != null) {
+            if (transform != null && c.design.layout == LayoutMode.FREE) {
+                // Arrastrar para mover, pellizcar para cambiar el tamaño.
+                val wPx = with(density) { c.innerW.dp.toPx() }
+                val hPx = with(density) { c.innerH.dp.toPx() }
+                Modifier.pointerInput(e.id, wPx, hPx) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        c.onSelect?.invoke(e.id)
+                        do {
+                            val event = awaitPointerEvent()
+                            val pan = event.calculatePan()
+                            val zoom = event.calculateZoom()
+                            if (pan != Offset.Zero || zoom != 1f) {
+                                transform(e.id, pan.x / wPx, pan.y / hPx, zoom)
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            }
+                        } while (event.changes.any { it.pressed })
+                        c.onGestureEnd?.invoke()
+                    }
+                }
+            } else if (c.onSelect != null) {
                 Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { c.onSelect?.invoke(e.id) }
             } else Modifier,
         )
-        .then(if (selected) Modifier.border(1.5.dp, primary, RoundedCornerShape(6.dp)).background(primary.copy(alpha = 0.12f), RoundedCornerShape(6.dp)) else Modifier)
+        .then(
+            if (selected) Modifier.border(1.5.dp, primary, RoundedCornerShape(6.dp)).background(primary.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
+            else if (c.onTransform != null && c.design.layout == LayoutMode.FREE) Modifier.border(0.5.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(6.dp))
+            else Modifier,
+        )
 
     val color = colorFor(e, c)
     val px = e.size * c.scale
@@ -296,6 +372,46 @@ private fun PElement(e: WidgetElement, c: PCtx, colW: Float) {
             ElementType.DIVIDER -> Box(
                 Modifier.width(colW.dp).padding(vertical = (4 * c.scale).dp).height(1.dp).background(lineColor(c)),
             )
+
+            ElementType.SHAPE -> {
+                if (e.shapeStyle == BgStyle.MATERIAL_YOU) {
+                    Box(
+                        Modifier.size(boxW.dp, boxH.dp).clip(RoundedCornerShape(e.radius.dp))
+                            .background(MaterialTheme.colorScheme.secondaryContainer),
+                    )
+                } else {
+                    val ctx = LocalContext.current
+                    val bmp = remember(e.shapeStyle, e.customColor, e.customColor2, e.opacity, e.radius, boxW, boxH) {
+                        GlassPainter.shape(ctx, e, boxW, boxH).asImageBitmap()
+                    }
+                    Image(bmp, null, Modifier.size(boxW.dp, boxH.dp), contentScale = ContentScale.FillBounds)
+                }
+            }
+
+            ElementType.PHOTO -> {
+                val ctx = LocalContext.current
+                val bmp = remember(e.text, e.radius, e.customColor, e.customColor2, boxW, boxH) {
+                    GlassPainter.photo(ctx, e, boxW, boxH).asImageBitmap()
+                }
+                Box(contentAlignment = Alignment.Center) {
+                    Image(bmp, null, Modifier.size(boxW.dp, boxH.dp), contentScale = ContentScale.FillBounds)
+                    if (e.text.isBlank()) Text("🖼️ Elige una foto", style = textStyle(Color.White, 12f, e))
+                }
+            }
+
+            ElementType.RING -> Box(Modifier.size(px.dp), contentAlignment = Alignment.Center) {
+                val frac = DesignLogic.ringFraction(e, c.weather, c.sys, now)
+                Canvas(Modifier.fillMaxSize()) {
+                    val sw = size.minDimension * 0.11f
+                    val inset = sw / 2
+                    val arcSize = androidx.compose.ui.geometry.Size(size.width - sw, size.height - sw)
+                    drawArc(color.copy(alpha = 0.22f), 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(sw, cap = StrokeCap.Round))
+                    drawArc(color, -90f, 360f * frac.coerceIn(0.005f, 1f), false, Offset(inset, inset), arcSize, style = Stroke(sw, cap = StrokeCap.Round))
+                }
+                if (e.showLabel) {
+                    Text(DesignLogic.ringLabel(e, c.weather, c.sys, now), maxLines = 1, style = textStyle(color, px * 0.19f, e, center = true))
+                }
+            }
 
             ElementType.SPACER -> Spacer(Modifier.height(px.dp).width(if (selected) 24.dp else 0.dp))
 

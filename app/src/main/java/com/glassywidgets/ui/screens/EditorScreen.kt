@@ -1,6 +1,19 @@
 package com.glassywidgets.ui.screens
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import com.glassywidgets.data.PhotoStore
+import com.glassywidgets.data.RingSource
+import com.glassywidgets.widget.DesignLogic
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -146,6 +159,61 @@ fun EditorScreen(
     fun updateEl(e: WidgetElement) { setElements(d.elements.map { if (it.id == e.id) e else it }) }
     fun select(id: String) { selectedId = id; panel = 0 }
 
+    // ---- Modo libre: arrastrar / pellizcar con imán ----
+    var guideX by remember { mutableStateOf<Float?>(null) }
+    var guideY by remember { mutableStateOf<Float?>(null) }
+    var dragging by remember { mutableStateOf(false) }
+    val raw = remember { mutableMapOf<String, FloatArray>() }
+
+    fun onTransform(id: String, dx: Float, dy: Float, zoom: Float) {
+        val e = d.elements.firstOrNull { it.id == id } ?: return
+        dragging = true
+        val r = raw.getOrPut(id) {
+            floatArrayOf(e.x, e.y, if (e.type.isBox) e.w else e.size.toFloat(), e.h)
+        }
+        r[0] = (r[0] + dx).coerceIn(0f, 1f)
+        r[1] = (r[1] + dy).coerceIn(0f, 1f)
+        if (zoom != 1f) { r[2] *= zoom; r[3] *= zoom }
+        var nx = r[0]
+        var ny = r[1]
+        guideX = null
+        guideY = null
+        if (d.snap) {
+            val others = d.elements.filter { it.id != id }
+            (listOf(0f, 0.5f, 1f) + others.map { it.x }).minByOrNull { abs(it - nx) }?.let {
+                if (abs(it - nx) < 0.025f) { nx = it; guideX = it }
+            }
+            (listOf(0f, 0.5f, 1f) + others.map { it.y }).minByOrNull { abs(it - ny) }?.let {
+                if (abs(it - ny) < 0.04f) { ny = it; guideY = it }
+            }
+        }
+        updateEl(
+            if (e.type.isBox) e.copy(x = nx, y = ny, w = r[2].coerceIn(0.05f, 1f), h = r[3].coerceIn(0.05f, 1f))
+            else e.copy(x = nx, y = ny, size = r[2].roundToInt().coerceIn(6, 220)),
+        )
+    }
+
+    fun onGestureEnd() { raw.clear(); guideX = null; guideY = null; dragging = false }
+
+    // ---- Fotos ----
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var photoTarget by remember { mutableStateOf<String?>(null) }
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        val id = photoTarget
+        if (uri != null && id != null) {
+            scope.launch {
+                val path = PhotoStore.import(context, uri, id)
+                val e = d.elements.firstOrNull { it.id == id }
+                if (path != null && e != null) updateEl(e.copy(text = path))
+            }
+        }
+    }
+    fun pickPhoto(id: String) {
+        photoTarget = id
+        photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+
     LaunchedEffect(selIndex) { if (selIndex >= 0) stripState.animateScrollToItem(selIndex + 1) }
 
     LiquidBackground {
@@ -182,6 +250,11 @@ fun EditorScreen(
                         .shadow(18.dp, RoundedCornerShape(d.cornerRadius.dp), clip = false, ambientColor = Color.Black.copy(alpha = 0.4f)),
                     selectedId = selectedId,
                     onSelect = { select(it) },
+                    onTransform = if (d.layout == LayoutMode.FREE) ::onTransform else null,
+                    onGestureEnd = ::onGestureEnd,
+                    guideX = guideX,
+                    guideY = guideY,
+                    showGrid = dragging,
                 )
                 Row(
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
@@ -243,7 +316,13 @@ fun EditorScreen(
                                     index = selIndex,
                                     count = d.elements.size,
                                     split = d.layout == LayoutMode.SPLIT,
+                                    free = d.layout == LayoutMode.FREE,
                                     onChange = ::updateEl,
+                                    onPickPhoto = { pickPhoto(selected.id) },
+                                    onLayer = { front ->
+                                        val rest = d.elements.filterNot { it.id == selected.id }
+                                        setElements(if (front) rest + selected else listOf(selected) + rest)
+                                    },
                                     onMove = { dir ->
                                         val j = selIndex + dir
                                         if (j in d.elements.indices) {
@@ -303,10 +382,15 @@ fun EditorScreen(
                         ElementType.entries.filter { it.category == cat }.forEach { type ->
                             AddTile(type) {
                                 val ne = Templates.newElement(type, selected?.column ?: 0)
-                                val at = if (selIndex >= 0) selIndex + 1 else d.elements.size
+                                val at = when {
+                                    type == ElementType.SHAPE -> 0
+                                    selIndex >= 0 -> selIndex + 1
+                                    else -> d.elements.size
+                                }
                                 setElements(d.elements.toMutableList().also { it.add(at, ne) })
                                 select(ne.id)
                                 showAdd = false
+                                if (type == ElementType.PHOTO) pickPhoto(ne.id)
                             }
                         }
                     }
@@ -408,7 +492,10 @@ private fun Inspector(
     index: Int,
     count: Int,
     split: Boolean,
+    free: Boolean,
     onChange: (WidgetElement) -> Unit,
+    onPickPhoto: () -> Unit,
+    onLayer: (Boolean) -> Unit,
     onMove: (Int) -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
@@ -429,7 +516,7 @@ private fun Inspector(
     }
 
     // Posición
-    GlassCard(Modifier.fillMaxWidth()) {
+    if (free) FreePositionCard(e, onChange, onLayer) else GlassCard(Modifier.fillMaxWidth()) {
         if (split) {
             FieldLabel("Columna")
             Segmented(listOf(0, 1), e.column, { onChange(e.copy(column = it, sameRow = false)) }) {
@@ -457,7 +544,7 @@ private fun Inspector(
     val hasContent = e.type in setOf(
         ElementType.TIME, ElementType.DATE, ElementType.WORLD_CLOCK, ElementType.ANALOG_CLOCK, ElementType.GREETING,
         ElementType.CUSTOM_TEXT, ElementType.EMOJI, ElementType.HOURLY, ElementType.DAILY, ElementType.ROTATOR,
-        ElementType.DAY_PROGRESS, ElementType.BATTERY_BAR,
+        ElementType.DAY_PROGRESS, ElementType.BATTERY_BAR, ElementType.SHAPE, ElementType.PHOTO, ElementType.RING,
     )
     if (hasContent) {
         GlassCard(Modifier.fillMaxWidth()) {
@@ -534,17 +621,43 @@ private fun Inspector(
                 }
                 ElementType.DAY_PROGRESS, ElementType.BATTERY_BAR ->
                     SwitchRow("Mostrar etiqueta", e.showLabel) { onChange(e.copy(showLabel = it)) }
+                ElementType.RING -> {
+                    Segmented(RingSource.entries, e.ringSource, { onChange(e.copy(ringSource = it)) }) { Text(it.label, maxLines = 1) }
+                    SwitchRow("Mostrar porcentaje", e.showLabel) { onChange(e.copy(showLabel = it)) }
+                }
+                ElementType.SHAPE -> {
+                    ChipGroup("Estilo", BgStyle.entries, e.shapeStyle, { it.label }) { onChange(e.copy(shapeStyle = it)) }
+                    if (e.shapeStyle != BgStyle.MATERIAL_YOU) {
+                        ColorPickerRow("Color 1", e.customColor, { onChange(e.copy(customColor = it)) })
+                        if (e.shapeStyle != BgStyle.SOLID) ColorPickerRow("Color 2", e.customColor2, { onChange(e.copy(customColor2 = it)) })
+                        LabeledSlider("Opacidad", e.opacity, 0f..1f, "${(e.opacity * 100).roundToInt()}%") { onChange(e.copy(opacity = it)) }
+                    }
+                    LabeledSlider("Redondeo", e.radius.toFloat(), 0f..100f, if (e.radius >= 100) "cápsula" else "${e.radius} dp") {
+                        onChange(e.copy(radius = it.roundToInt()))
+                    }
+                    Text(
+                        "Tip: pon una forma detrás de un texto para crear cápsulas de cristal.",
+                        style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant,
+                    )
+                }
+                ElementType.PHOTO -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onPickPhoto) { Text(if (e.text.isBlank()) "Elegir foto" else "Cambiar foto") }
+                        if (e.text.isNotBlank()) OutlinedButton(onClick = { onChange(e.copy(text = "")) }) { Text("Quitar") }
+                    }
+                    LabeledSlider("Redondeo", e.radius.toFloat(), 0f..100f, "${e.radius} dp") { onChange(e.copy(radius = it.roundToInt())) }
+                }
                 else -> Unit
             }
         }
     }
 
     // Tamaño y tipografía
-    if (e.type != ElementType.DIVIDER) {
+    if (e.type != ElementType.DIVIDER && !e.type.isBox) {
         GlassCard(Modifier.fillMaxWidth()) {
             val (label, range) = when (e.type) {
                 ElementType.SPACER -> "Alto" to 2f..48f
-                ElementType.ANALOG_CLOCK -> "Diámetro" to 40f..200f
+                ElementType.ANALOG_CLOCK, ElementType.RING -> "Diámetro" to 30f..200f
                 ElementType.DAY_PROGRESS, ElementType.BATTERY_BAR -> "Grosor" to 3f..24f
                 ElementType.HOURLY, ElementType.DAILY -> "Tamaño del texto" to 9f..20f
                 else -> "Tamaño" to 8f..110f
@@ -560,13 +673,72 @@ private fun Inspector(
     }
 
     // Color
-    if (e.type != ElementType.SPACER && e.type != ElementType.WEATHER_ICON && e.type != ElementType.EMOJI) {
+    if (e.type != ElementType.SPACER && e.type != ElementType.WEATHER_ICON && e.type != ElementType.EMOJI && !e.type.isBox) {
         GlassCard(Modifier.fillMaxWidth()) {
             FieldLabel("Color")
             Segmented(ColorRole.entries, e.colorRole, { onChange(e.copy(colorRole = it)) }) { Text(it.label) }
             if (e.colorRole == ColorRole.CUSTOM) {
                 ColorPickerRow("Color propio", e.customColor, { onChange(e.copy(customColor = it)) })
             }
+            LabeledSlider("Opacidad del elemento", e.alpha, 0.1f..1f, "${(e.alpha * 100).roundToInt()}%") { onChange(e.copy(alpha = it)) }
+        }
+    }
+}
+
+/** Posición en modo libre: ancla, coordenadas, empujones finos, capas y tamaño de caja. */
+@Composable
+private fun FreePositionCard(e: WidgetElement, onChange: (WidgetElement) -> Unit, onLayer: (Boolean) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    GlassCard(Modifier.fillMaxWidth()) {
+        FieldLabel("Posición · arrastra en la vista previa, pellizca para el tamaño")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text("Ancla", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+                Spacer(Modifier.height(4.dp))
+                VAlign.entries.forEach { v ->
+                    Row {
+                        HAlign.entries.forEach { h ->
+                            val on = e.anchorH == h && e.anchorV == v
+                            Box(
+                                Modifier.padding(2.dp).size(26.dp).clip(RoundedCornerShape(7.dp))
+                                    .background(if (on) cs.primary else cs.onSurface.copy(alpha = 0.10f))
+                                    .clickable { onChange(e.copy(anchorH = h, anchorV = v)) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Box(Modifier.size(6.dp).clip(CircleShape).background(if (on) cs.onPrimary else cs.onSurface.copy(alpha = 0.5f)))
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("Mover poco a poco", style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant)
+                val step = 0.01f
+                IconButton(onClick = { onChange(e.copy(y = (e.y - step).coerceIn(0f, 1f))) }) { Icon(Icons.Filled.KeyboardArrowUp, "Arriba") }
+                Row {
+                    IconButton(onClick = { onChange(e.copy(x = (e.x - step).coerceIn(0f, 1f))) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Izquierda") }
+                    Spacer(Modifier.width(24.dp))
+                    IconButton(onClick = { onChange(e.copy(x = (e.x + step).coerceIn(0f, 1f))) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Derecha") }
+                }
+                IconButton(onClick = { onChange(e.copy(y = (e.y + step).coerceIn(0f, 1f))) }) { Icon(Icons.Filled.KeyboardArrowDown, "Abajo") }
+            }
+        }
+        LabeledSlider("Horizontal", e.x, 0f..1f, "${(e.x * 100).roundToInt()}%") { onChange(e.copy(x = it)) }
+        LabeledSlider("Vertical", e.y, 0f..1f, "${(e.y * 100).roundToInt()}%") { onChange(e.copy(y = it)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { onChange(e.copy(x = 0.5f, anchorH = HAlign.CENTER)) }, modifier = Modifier.weight(1f)) { Text("Centrar ↔") }
+            OutlinedButton(onClick = { onChange(e.copy(y = 0.5f, anchorV = VAlign.CENTER)) }, modifier = Modifier.weight(1f)) { Text("Centrar ↕") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { onLayer(true) }, modifier = Modifier.weight(1f)) { Text("⬆ Al frente") }
+            OutlinedButton(onClick = { onLayer(false) }, modifier = Modifier.weight(1f)) { Text("⬇ Al fondo") }
+        }
+        if (e.type.isBox || e.type.isStretch) {
+            LabeledSlider("Ancho", e.w, 0.05f..1f, "${(e.w * 100).roundToInt()}%") { onChange(e.copy(w = it)) }
+        }
+        if (e.type.isBox) {
+            LabeledSlider("Alto", e.h, 0.05f..1f, "${(e.h * 100).roundToInt()}%") { onChange(e.copy(h = it)) }
         }
     }
 }
@@ -575,7 +747,19 @@ private fun Inspector(
 private fun LayoutPanel(d: WidgetDesign, onChange: (WidgetDesign) -> Unit) {
     GlassCard(Modifier.fillMaxWidth()) {
         FieldLabel("Distribución")
-        LayoutPicker(d.layout) { onChange(d.copy(layout = it)) }
+        LayoutPicker(d.layout) { mode ->
+            onChange(if (mode == LayoutMode.FREE) DesignLogic.toFree(d) else d.copy(layout = mode))
+        }
+        if (d.layout == LayoutMode.FREE) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Arrastra cada elemento con el dedo en la vista previa y pellizca para agrandarlo. " +
+                    "Las posiciones se adaptan al tamaño del widget.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SwitchRow("Imán y guías al arrastrar", d.snap) { onChange(d.copy(snap = it)) }
+        }
         if (d.layout == LayoutMode.SPLIT) {
             Spacer(Modifier.height(8.dp))
             LabeledSlider("Ancho columna izquierda", d.split, 0.25f..0.75f, "${(d.split * 100).roundToInt()}%") {
@@ -589,7 +773,7 @@ private fun LayoutPanel(d: WidgetDesign, onChange: (WidgetDesign) -> Unit) {
             )
         }
     }
-    ColumnAlignCard(if (d.layout == LayoutMode.SPLIT) "Columna izquierda" else "Contenido", d.align, d.vAlign) { h, v ->
+    if (d.layout != LayoutMode.FREE) ColumnAlignCard(if (d.layout == LayoutMode.SPLIT) "Columna izquierda" else "Contenido", d.align, d.vAlign) { h, v ->
         onChange(d.copy(align = h, vAlign = v))
     }
     if (d.layout == LayoutMode.SPLIT) {

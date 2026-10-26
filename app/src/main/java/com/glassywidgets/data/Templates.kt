@@ -6,6 +6,13 @@ object Templates {
     private fun el(type: ElementType, size: Int, block: WidgetElement.() -> WidgetElement = { this }) =
         WidgetElement(type = type, size = size).block()
 
+    /** Elemento posicionado libremente. */
+    private fun at(
+        type: ElementType, size: Int, x: Float, y: Float,
+        h: HAlign = HAlign.CENTER, v: VAlign = VAlign.CENTER,
+        block: WidgetElement.() -> WidgetElement = { this },
+    ) = WidgetElement(type = type, size = size, x = x, y = y, anchorH = h, anchorV = v).block()
+
     // ---------- Widgets listos (su estilo lo controla Ajustes) ----------
 
     val builtinClock = WidgetDesign(
@@ -77,6 +84,130 @@ object Templates {
     // ---------- Plantillas para "Crear" (ids fijos y estables) ----------
 
     val starterDesigns: List<WidgetDesign> = listOf(
+        // Inspirado en "At a Glance" de Google Pixel
+        WidgetDesign(
+            id = "tpl_glance",
+            name = "Pixel · De un vistazo",
+            layout = LayoutMode.FREE,
+            style = BgStyle.SOLID,
+            opacity = 0f,
+            elements = listOf(
+                at(ElementType.DATE, 24, 0f, 0.36f, HAlign.START) { copy(dateFormat = DateFormatOpt.MEDIUM) },
+                at(ElementType.WEATHER_ICON, 18, 0f, 0.74f, HAlign.START),
+                at(ElementType.TEMPERATURE, 17, 0.1f, 0.74f, HAlign.START) { copy(font = FontOpt.MEDIUM) },
+                at(ElementType.CONDITION, 14, 0.25f, 0.74f, HAlign.START) { copy(colorRole = ColorRole.MUTED) },
+            ),
+        ),
+        // Inspirado en los widgets de Nothing Phone
+        WidgetDesign(
+            id = "tpl_nothing",
+            name = "Nothing · Punto rojo",
+            layout = LayoutMode.FREE,
+            style = BgStyle.SOLID,
+            color1 = 0xFF0D0D0D,
+            opacity = 0.92f,
+            cornerRadius = 26,
+            textColor = 0xFFEDEDED,
+            accentColor = 0xFFD71921,
+            elements = listOf(
+                at(ElementType.TIME, 54, 0f, 0f, HAlign.START, VAlign.TOP) { copy(font = FontOpt.MONO, timeFormat = TimeFormat.H24) },
+                at(ElementType.DATE, 13, 0f, 1f, HAlign.START, VAlign.BOTTOM) { copy(font = FontOpt.MONO, colorRole = ColorRole.MUTED, dateFormat = DateFormatOpt.MEDIUM) },
+                at(ElementType.RING, 60, 1f, 0f, HAlign.END, VAlign.TOP) { copy(font = FontOpt.MONO, colorRole = ColorRole.ACCENT) },
+                at(ElementType.CUSTOM_TEXT, 10, 1f, 1f, HAlign.END, VAlign.BOTTOM) { copy(text = "● ● ●", colorRole = ColorRole.ACCENT) },
+            ),
+        ),
+        // Inspirado en el widget del clima de iPhone
+        WidgetDesign(
+            id = "tpl_ios",
+            name = "iOS · Clima",
+            layout = LayoutMode.FREE,
+            style = BgStyle.GRADIENT,
+            color1 = 0xFF2F80ED,
+            color2 = 0xFF56CCF2,
+            opacity = 1f,
+            cornerRadius = 26,
+            padding = 14,
+            elements = listOf(
+                at(ElementType.CITY, 15, 0f, 0f, HAlign.START, VAlign.TOP) { copy(font = FontOpt.MEDIUM) },
+                at(ElementType.TEMPERATURE, 44, 0f, 0.15f, HAlign.START, VAlign.TOP) { copy(font = FontOpt.THIN) },
+                at(ElementType.WEATHER_ICON, 18, 1f, 0f, HAlign.END, VAlign.TOP),
+                at(ElementType.CONDITION, 12, 1f, 0.22f, HAlign.END, VAlign.TOP) { copy(font = FontOpt.MEDIUM) },
+                at(ElementType.MIN_MAX, 12, 1f, 0.36f, HAlign.END, VAlign.TOP),
+                at(ElementType.HOURLY, 11, 0.5f, 1f, HAlign.CENTER, VAlign.BOTTOM) { copy(count = 6, w = 1f) },
+            ),
+        ),
+        WidgetDesign(
+            id = "tpl_capsules",
+            name = "Cápsulas de cristal",
+            layout = LayoutMode.FREE,
+            padding = 14,
+            elements = listOf(
+                at(ElementType.SHAPE, 0, 0.5f, 0.36f) { copy(w = 1f, h = 0.6f, radius = 100, customColor = 0xFFFFFFFF, customColor2 = 0xFFFFFFFF, opacity = 0.18f) },
+                at(ElementType.SHAPE, 0, 0f, 0.92f, HAlign.START) { copy(w = 0.48f, h = 0.26f, radius = 100, customColor = 0xFFFFFFFF, customColor2 = 0xFFFFFFFF, opacity = 0.18f) },
+                at(ElementType.SHAPE, 0, 1f, 0.92f, HAlign.END) { copy(w = 0.48f, h = 0.26f, radius = 100, customColor = 0xFFFFFFFF, customColor2 = 0xFFFFFFFF, opacity = 0.18f) },
+                at(ElementType.TIME, 46, 0.5f, 0.36f) { copy(font = FontOpt.LIGHT) },
+                at(ElementType.ROTATOR, 12, 0.24f, 0.92f) { copy(font = FontOpt.MEDIUM, rotateItems = listOf(ElementType.TEMPERATURE, ElementType.CONDITION, ElementType.HUMIDITY), flipAnim = FlipAnim.SLIDE_UP) },
+                at(ElementType.DATE, 12, 0.76f, 0.92f) { copy(font = FontOpt.MEDIUM, dateFormat = DateFormatOpt.MEDIUM) },
+            ),
+        ),
+        WidgetDesign(
+            id = "tpl_rings",
+            name = "Anillos de actividad",
+            layout = LayoutMode.FREE,
+            style = BgStyle.DARK_GLASS,
+            color1 = 0xFF1E3A8A,
+            color2 = 0xFF7C3AED,
+            opacity = 0.6f,
+            elements = listOf(
+                at(ElementType.RING, 64, 0.16f, 0.4f) { copy(ringSource = RingSource.BATTERY, colorRole = ColorRole.CUSTOM, customColor = 0xFF34D399) },
+                at(ElementType.RING, 64, 0.5f, 0.4f) { copy(ringSource = RingSource.DAY, colorRole = ColorRole.CUSTOM, customColor = 0xFFFBBF24) },
+                at(ElementType.RING, 64, 0.84f, 0.4f) { copy(ringSource = RingSource.HUMIDITY, colorRole = ColorRole.CUSTOM, customColor = 0xFF60A5FA) },
+                at(ElementType.CUSTOM_TEXT, 11, 0.16f, 0.95f) { copy(text = "Batería", colorRole = ColorRole.MUTED) },
+                at(ElementType.CUSTOM_TEXT, 11, 0.5f, 0.95f) { copy(text = "Día", colorRole = ColorRole.MUTED) },
+                at(ElementType.CUSTOM_TEXT, 11, 0.84f, 0.95f) { copy(text = "Humedad", colorRole = ColorRole.MUTED) },
+            ),
+        ),
+        WidgetDesign(
+            id = "tpl_bigclock",
+            name = "Reloj gigante",
+            layout = LayoutMode.FREE,
+            style = BgStyle.MATERIAL_YOU,
+            cornerRadius = 36,
+            elements = listOf(
+                at(ElementType.TIME, 96, 0f, 0.5f, HAlign.START) { copy(font = FontOpt.BLACK, colorRole = ColorRole.ACCENT, timeFormat = TimeFormat.HOURS) },
+                at(ElementType.TIME, 96, 0.44f, 0.5f, HAlign.START) { copy(font = FontOpt.BLACK, timeFormat = TimeFormat.MINUTES, alpha = 0.45f) },
+                at(ElementType.DATE, 14, 1f, 0f, HAlign.END, VAlign.TOP) { copy(font = FontOpt.MEDIUM, dateFormat = DateFormatOpt.WEEKDAY) },
+                at(ElementType.DATE, 13, 1f, 0.2f, HAlign.END, VAlign.TOP) { copy(colorRole = ColorRole.MUTED, dateFormat = DateFormatOpt.DAY_MONTH) },
+                at(ElementType.TEMPERATURE, 15, 1f, 1f, HAlign.END, VAlign.BOTTOM) { copy(font = FontOpt.MEDIUM) },
+                at(ElementType.WEATHER_ICON, 15, 0.86f, 1f, HAlign.END, VAlign.BOTTOM),
+            ),
+        ),
+        WidgetDesign(
+            id = "tpl_poster",
+            name = "Póster con foto",
+            layout = LayoutMode.FREE,
+            padding = 12,
+            elements = listOf(
+                at(ElementType.PHOTO, 0, 0f, 0.5f, HAlign.START) { copy(w = 0.42f, h = 1f, radius = 20, customColor = 0xFFFF9A9E, customColor2 = 0xFFFAD0C4) },
+                at(ElementType.TIME, 40, 0.48f, 0.3f, HAlign.START) { copy(font = FontOpt.LIGHT) },
+                at(ElementType.DATE, 13, 0.48f, 0.6f, HAlign.START) { copy(colorRole = ColorRole.MUTED, dateFormat = DateFormatOpt.LONG) },
+                at(ElementType.ROTATOR, 12, 0.48f, 0.85f, HAlign.START) { copy(colorRole = ColorRole.ACCENT, flipAnim = FlipAnim.SLIDE_SIDE) },
+            ),
+        ),
+        WidgetDesign(
+            id = "tpl_line",
+            name = "Minimal con línea",
+            layout = LayoutMode.FREE,
+            opacity = 0.22f,
+            elements = listOf(
+                at(ElementType.TIME, 46, 0f, 0.5f, HAlign.START) { copy(font = FontOpt.THIN) },
+                at(ElementType.SHAPE, 0, 0.5f, 0.5f) { copy(shapeStyle = BgStyle.SOLID, w = 0.008f, h = 0.7f, radius = 2, customColor = 0xFFFFFFFF, opacity = 0.6f) },
+                at(ElementType.DATE, 16, 0.56f, 0.28f, HAlign.START) { copy(font = FontOpt.MEDIUM, dateFormat = DateFormatOpt.WEEKDAY) },
+                at(ElementType.DATE, 13, 0.56f, 0.52f, HAlign.START) { copy(colorRole = ColorRole.MUTED, dateFormat = DateFormatOpt.DAY_MONTH) },
+                at(ElementType.WEATHER_ICON, 14, 0.56f, 0.78f, HAlign.START),
+                at(ElementType.TEMPERATURE, 14, 0.64f, 0.78f, HAlign.START) { copy(font = FontOpt.MEDIUM) },
+            ),
+        ),
         builtinCombined.copy(id = "tpl_split", name = "Dividido: reloj | clima"),
         WidgetDesign(
             id = "tpl_pixel",
@@ -182,10 +313,11 @@ object Templates {
 
     val blank = WidgetDesign(
         id = "tpl_blank",
-        name = "En blanco",
+        name = "En blanco (libre)",
+        layout = LayoutMode.FREE,
         elements = listOf(
-            el(ElementType.TIME, 48) { copy(font = FontOpt.THIN) },
-            el(ElementType.DATE, 14) { copy(colorRole = ColorRole.MUTED) },
+            at(ElementType.TIME, 48, 0.5f, 0.4f) { copy(font = FontOpt.THIN) },
+            at(ElementType.DATE, 14, 0.5f, 0.8f) { copy(colorRole = ColorRole.MUTED) },
         ),
     )
 
@@ -205,6 +337,9 @@ object Templates {
             ElementType.DAY_PROGRESS, ElementType.BATTERY_BAR -> base.copy(size = 8, colorRole = ColorRole.ACCENT)
             ElementType.DIVIDER -> base.copy(size = 1, colorRole = ColorRole.MUTED)
             ElementType.SPACER -> base.copy(size = 8)
+            ElementType.SHAPE -> base.copy(w = 0.7f, h = 0.6f, radius = 28, customColor = 0xFFFFFFFF, customColor2 = 0xFFFFFFFF, opacity = 0.2f)
+            ElementType.PHOTO -> base.copy(w = 0.42f, h = 0.9f, radius = 22, customColor = 0xFF8EC5FF, customColor2 = 0xFFE0C3FC)
+            ElementType.RING -> base.copy(size = 64, colorRole = ColorRole.ACCENT)
             ElementType.CUSTOM_TEXT -> base.copy(size = 14, text = "Hola 👋")
             ElementType.EMOJI -> base.copy(size = 32, text = "✨")
             else -> base.copy(size = 13, colorRole = ColorRole.MUTED)

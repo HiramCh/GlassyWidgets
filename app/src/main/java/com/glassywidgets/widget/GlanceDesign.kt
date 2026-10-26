@@ -79,6 +79,7 @@ private class Ctx(
     val is24: Boolean,
     val scale: Float,
     val materialYou: Boolean,
+    val innerH: Float,
 )
 
 /** Renderiza cualquier [WidgetDesign] como widget de pantalla de inicio. */
@@ -92,7 +93,9 @@ fun GlanceDesign(design: WidgetDesign, weather: WeatherData?, sys: SystemInfo, m
     val c = Ctx(
         design, weather, sys, System.currentTimeMillis(), DateFormat.is24HourFormat(context),
         DesignLogic.scale(design, w, h, weather), materialYou,
+        DesignLogic.innerSize(design, w, h).second,
     )
+    val (iw, ih) = DesignLogic.innerSize(design, w, h)
     val geo = DesignLogic.geometry(design, w)
     val cols = DesignLogic.columns(design)
 
@@ -106,7 +109,20 @@ fun GlanceDesign(design: WidgetDesign, weather: WeatherData?, sys: SystemInfo, m
         modifier = GlanceModifier.fillMaxSize().then(background).cornerRadius(design.cornerRadius.dp).then(modifier),
         contentAlignment = Alignment.Center,
     ) {
-        if (design.layout == LayoutMode.SINGLE) {
+        if (design.layout == LayoutMode.FREE) {
+            // Modo libre: cada elemento en su posición, apilados como capas (el último queda arriba).
+            Box(GlanceModifier.fillMaxSize().padding(design.padding.dp)) {
+                design.elements.forEach { e ->
+                    val ins = DesignLogic.freeInsets(e, iw, ih)
+                    Box(
+                        GlanceModifier.fillMaxSize().padding(start = ins.start.dp, top = ins.top.dp, end = ins.end.dp, bottom = ins.bottom.dp),
+                        contentAlignment = Alignment(e.anchorH.glance(), e.anchorV.glance()),
+                    ) {
+                        GElement(e, c, e.w * iw, e.w * iw, e.h * ih)
+                    }
+                }
+            }
+        } else if (design.layout == LayoutMode.SINGLE) {
             GColumn(
                 cols[0], c, geo.widths[0], design.align, design.vAlign,
                 GlanceModifier.fillMaxSize().padding(design.padding.dp),
@@ -156,12 +172,12 @@ private fun GColumn(
 @Composable
 private fun GRow(row: List<WidgetElement>, c: Ctx, colW: Float) {
     if (row.size == 1) {
-        GElement(row[0], c, colW)
+        GElement(row[0], c, colW, row[0].w * colW, row[0].h * c.innerH)
     } else {
         Row(verticalAlignment = Alignment.CenterVertically) {
             row.forEachIndexed { i, e ->
                 if (i > 0) Spacer(GlanceModifier.width((8 * c.scale).dp))
-                GElement(e, c, colW)
+                GElement(e, c, colW, e.w * colW, e.h * c.innerH)
             }
         }
     }
@@ -170,11 +186,13 @@ private fun GRow(row: List<WidgetElement>, c: Ctx, colW: Float) {
 @Composable
 private fun colorFor(e: WidgetElement, c: Ctx): ColorProvider =
     if (c.materialYou && e.colorRole != ColorRole.CUSTOM) {
-        when (e.colorRole) {
+        val base = when (e.colorRole) {
             ColorRole.ACCENT -> GlanceTheme.colors.primary
             ColorRole.MUTED -> GlanceTheme.colors.onSurfaceVariant
             else -> GlanceTheme.colors.onSurface
         }
+        if (e.alpha >= 0.999f) base
+        else ColorProvider(Color(DesignLogic.withAlpha(base.getColor(LocalContext.current).toArgb(), e.alpha)))
     } else {
         ColorProvider(Color(DesignLogic.colorArgb(e, c.design)))
     }
@@ -192,7 +210,7 @@ private fun style(color: ColorProvider, sizeSp: Float, e: WidgetElement, center:
 )
 
 @Composable
-private fun GElement(e: WidgetElement, c: Ctx, colW: Float) {
+private fun GElement(e: WidgetElement, c: Ctx, colW: Float, boxW: Float, boxH: Float) {
     val context = LocalContext.current
     val color = colorFor(e, c)
     val argb = color.getColor(context).toArgb()
@@ -274,6 +292,43 @@ private fun GElement(e: WidgetElement, c: Ctx, colW: Float) {
         }
 
         ElementType.SPACER -> Spacer(GlanceModifier.height(px.dp))
+
+        ElementType.SHAPE -> if (e.shapeStyle == BgStyle.MATERIAL_YOU) {
+            Box(
+                GlanceModifier.width(boxW.dp).height(boxH.dp)
+                    .background(GlanceTheme.colors.secondaryContainer).cornerRadius(e.radius.dp),
+            ) {}
+        } else {
+            Image(
+                provider = ImageProvider(GlassPainter.shape(context, e, boxW, boxH)),
+                contentDescription = null,
+                modifier = GlanceModifier.width(boxW.dp).height(boxH.dp),
+                contentScale = ContentScale.FillBounds,
+            )
+        }
+
+        ElementType.PHOTO -> Image(
+            provider = ImageProvider(GlassPainter.photo(context, e, boxW, boxH)),
+            contentDescription = null,
+            modifier = GlanceModifier.width(boxW.dp).height(boxH.dp),
+            contentScale = ContentScale.FillBounds,
+        )
+
+        ElementType.RING -> Box(GlanceModifier.size(px.dp), contentAlignment = Alignment.Center) {
+            Image(
+                provider = ImageProvider(
+                    GlassPainter.ring(
+                        context, px, DesignLogic.ringFraction(e, c.weather, c.sys, c.now),
+                        argb, ColorUtils.setAlphaComponent(argb, 55),
+                    ),
+                ),
+                contentDescription = null,
+                modifier = GlanceModifier.size(px.dp),
+            )
+            if (e.showLabel) {
+                Text(DesignLogic.ringLabel(e, c.weather, c.sys, c.now), style = style(color, px * 0.19f, e, center = true), maxLines = 1)
+            }
+        }
 
         else -> Text(
             text = DesignLogic.text(e, c.weather, c.sys, c.now, c.is24),

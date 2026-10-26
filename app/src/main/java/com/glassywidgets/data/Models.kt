@@ -17,7 +17,10 @@ enum class BgStyle(val label: String) {
 
 /** Distribución del widget: una columna o partido a la mitad. */
 @Serializable
-enum class LayoutMode(val label: String) { SINGLE("Una columna"), SPLIT("Dos columnas") }
+enum class LayoutMode(val label: String) { FREE("Libre"), SINGLE("Una columna"), SPLIT("Dos columnas") }
+
+@Serializable
+enum class RingSource(val label: String) { BATTERY("Batería"), DAY("Día"), HUMIDITY("Humedad"), PRECIP("Lluvia") }
 
 @Serializable
 enum class HAlign(val label: String) { START("Izquierda"), CENTER("Centro"), END("Derecha") }
@@ -82,20 +85,27 @@ enum class ElementType(val label: String, val emoji: String, val category: Categ
 
     BATTERY("Batería", "🔋", Category.SYSTEM),
     BATTERY_BAR("Barra de batería", "🪫", Category.SYSTEM),
+    RING("Anillo de progreso", "⭕", Category.SYSTEM),
 
     CUSTOM_TEXT("Texto libre", "✏️", Category.DECOR),
     EMOJI("Emoji / sticker", "✨", Category.DECOR),
     DIVIDER("Separador", "➖", Category.DECOR),
+    SHAPE("Forma / cápsula", "🔷", Category.DECOR),
+    PHOTO("Foto", "🖼️", Category.DECOR),
     SPACER("Espacio", "↕", Category.DECOR),
     ;
 
     /** Elementos que muestran texto (aceptan tipografía y mayúsculas). */
     val isText: Boolean
-        get() = this !in setOf(WEATHER_ICON, EMOJI, ANALOG_CLOCK, DIVIDER, SPACER, DAY_PROGRESS, BATTERY_BAR, HOURLY, DAILY)
+        get() = this !in setOf(WEATHER_ICON, EMOJI, ANALOG_CLOCK, DIVIDER, SPACER, DAY_PROGRESS, BATTERY_BAR, HOURLY, DAILY, SHAPE, PHOTO, RING)
 
     /** Elementos que se estiran a todo el ancho de su columna. */
     val isStretch: Boolean
         get() = this in setOf(HOURLY, DAILY, DAY_PROGRESS, BATTERY_BAR, DIVIDER)
+
+    /** Elementos con ancho y alto propios (en modo libre o columnas). */
+    val isBox: Boolean
+        get() = this == SHAPE || this == PHOTO
 
     /** Elementos actualizados por el propio sistema (TextClock). */
     val isLiveClock: Boolean
@@ -183,6 +193,23 @@ data class WidgetElement(
     val showSeconds: Boolean = true,
     val dialStyle: DialStyle = DialStyle.GLASS,
     val showLabel: Boolean = true,
+    // ---- Modo libre ----
+    /** Posición del punto de anclaje dentro del widget (0–1). */
+    val x: Float = 0.5f,
+    val y: Float = 0.5f,
+    val anchorH: HAlign = HAlign.CENTER,
+    val anchorV: VAlign = VAlign.CENTER,
+    /** Ancho y alto relativos (formas, fotos, barras y pronósticos). */
+    val w: Float = 0.5f,
+    val h: Float = 0.4f,
+    // ---- Formas y fotos ----
+    val radius: Int = 20,
+    val shapeStyle: BgStyle = BgStyle.GLASS,
+    val customColor2: Long = 0xFFE0C3FC,
+    val opacity: Float = 0.35f,
+    /** Transparencia general del elemento (1 = opaco). */
+    val alpha: Float = 1f,
+    val ringSource: RingSource = RingSource.BATTERY,
 )
 
 @Serializable
@@ -207,6 +234,11 @@ data class WidgetDesign(
     val accentColor: Long = 0xFFFFD166,
     val rimLight: Boolean = true,
     val elements: List<WidgetElement> = emptyList(),
+    /** Tamaño de referencia (dp) con el que se diseñó en modo libre. */
+    val refW: Float = 316f,
+    val refH: Float = 150f,
+    /** Imán: ajusta a centros y bordes al arrastrar. */
+    val snap: Boolean = true,
 )
 
 @Serializable

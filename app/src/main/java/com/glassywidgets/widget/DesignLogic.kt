@@ -4,6 +4,9 @@ import androidx.core.graphics.ColorUtils
 import com.glassywidgets.R
 import com.glassywidgets.data.ColorRole
 import com.glassywidgets.data.DayPoint
+import com.glassywidgets.data.ElemAlign
+import com.glassywidgets.data.HAlign
+import com.glassywidgets.data.VAlign
 import com.glassywidgets.data.DialStyle
 import com.glassywidgets.data.ElementType
 import com.glassywidgets.data.FlipAnim
@@ -23,6 +26,9 @@ import java.util.SimpleTimeZone
 import java.util.TimeZone
 import kotlin.math.max
 import kotlin.math.roundToInt
+
+/** Márgenes (dp) que colocan un elemento libre en su posición. */
+data class Insets(val start: Float, val top: Float, val end: Float, val bottom: Float)
 
 /** Medidas de cada columna del widget, en dp. */
 data class Geometry(val widths: List<Float>, val gap: Float)
@@ -49,6 +55,110 @@ object DesignLogic {
         } else {
             Geometry(listOf(inner), 0f)
         }
+    }
+
+    // ---------- Modo libre ----------
+
+    fun innerSize(d: WidgetDesign, widthDp: Float, heightDp: Float): Pair<Float, Float> =
+        (widthDp - d.padding * 2f).coerceAtLeast(10f) to (heightDp - d.padding * 2f).coerceAtLeast(10f)
+
+    /** Escala del modo libre: proporcional al tamaño con el que se diseñó. */
+    fun freeScale(d: WidgetDesign, widthDp: Float, heightDp: Float): Float =
+        minOf(widthDp / d.refW.coerceAtLeast(40f), heightDp / d.refH.coerceAtLeast(40f)).coerceIn(0.35f, 3f)
+
+    private fun axis(pos: Float, anchor: Int, size: Float): Pair<Float, Float> {
+        val p = pos.coerceIn(0f, 1f)
+        return when (anchor) {
+            0 -> (p * size) to 0f
+            2 -> 0f to ((1f - p) * size)
+            else -> if (p >= 0.5f) ((2f * p - 1f) * size) to 0f else 0f to ((1f - 2f * p) * size)
+        }
+    }
+
+    /**
+     * Para posicionar sin coordenadas absolutas (RemoteViews no las tiene) se usa una caja
+     * de tamaño completo, alineada según el ancla, con márgenes asimétricos.
+     */
+    fun freeInsets(e: WidgetElement, innerW: Float, innerH: Float): Insets {
+        val (s, en) = axis(e.x, e.anchorH.ordinal, innerW)
+        val (t, b) = axis(e.y, e.anchorV.ordinal, innerH)
+        return Insets(s, t, en, b)
+    }
+
+    /** Convierte un diseño de columnas en uno libre conservando aproximadamente su aspecto. */
+    fun toFree(d: WidgetDesign): WidgetDesign {
+        if (d.layout == LayoutMode.FREE) return d
+        val w = d.refW
+        val h = d.refH
+        val (iw, ih) = innerSize(d, w, h)
+        val s = scale(d, w, h, null)
+        val geo = geometry(d, w)
+        val cols = columns(d)
+        val placed = mutableMapOf<String, WidgetElement>()
+        cols.forEachIndexed { ci, col ->
+            if (col.isEmpty()) return@forEachIndexed
+            val colX0 = if (ci == 0) 0f else geo.widths[0] + geo.gap
+            val colW = geo.widths.getOrElse(ci) { iw }
+            val rows = rows(col)
+            val heights = rows.map { r -> r.maxOf { rowHeight(it) } * s }
+            val total = heights.sum()
+            val align = if (ci == 0) d.align else d.align2
+            val vAlign = if (ci == 0) d.vAlign else d.vAlign2
+            var y = when (vAlign) {
+                VAlign.TOP -> 0f
+                VAlign.CENTER -> (ih - total) / 2f
+                VAlign.BOTTOM -> ih - total
+            }
+            rows.forEachIndexed { ri, r ->
+                val rowW = r.sumOf { (widthOf(it, null) * s).toDouble() }.toFloat() + (r.size - 1) * 8f * s
+                val ownAlign = when (r.first().align) {
+                    ElemAlign.START -> HAlign.START
+                    ElemAlign.CENTER -> HAlign.CENTER
+                    ElemAlign.END -> HAlign.END
+                    ElemAlign.AUTO -> align
+                }
+                var x = colX0 + when (ownAlign) {
+                    HAlign.START -> 0f
+                    HAlign.CENTER -> (colW - rowW) / 2f
+                    HAlign.END -> colW - rowW
+                }
+                val cy = y + heights[ri] / 2f
+                r.forEach { e ->
+                    val ew = if (e.type.isStretch) colW else widthOf(e, null) * s
+                    placed[e.id] = e.copy(
+                        x = ((x + if (e.type.isStretch) colW / 2f else 0f) / iw).coerceIn(0f, 1f),
+                        y = (cy / ih).coerceIn(0f, 1f),
+                        anchorH = if (e.type.isStretch) HAlign.CENTER else HAlign.START,
+                        anchorV = VAlign.CENTER,
+                        w = if (e.type.isStretch) (colW / iw).coerceIn(0.05f, 1f) else e.w,
+                        sameRow = false,
+                    )
+                    x += ew + 8f * s
+                }
+                y += heights[ri]
+            }
+        }
+        return d.copy(layout = LayoutMode.FREE, elements = d.elements.map { placed[it.id] ?: it })
+    }
+
+    // ---------- Anillos ----------
+
+    fun ringFraction(e: WidgetElement, w: WeatherData?, sys: SystemInfo, now: Long): Float = when (e.ringSource) {
+        com.glassywidgets.data.RingSource.BATTERY -> sys.battery / 100f
+        com.glassywidgets.data.RingSource.DAY -> dayFraction(now)
+        com.glassywidgets.data.RingSource.HUMIDITY -> (w?.humidity ?: 0) / 100f
+        com.glassywidgets.data.RingSource.PRECIP -> (w?.precipProb ?: 0) / 100f
+    }
+
+    fun ringLabel(e: WidgetElement, w: WeatherData?, sys: SystemInfo, now: Long): String {
+        val pct = (ringFraction(e, w, sys, now) * 100).roundToInt()
+        val icon = when (e.ringSource) {
+            com.glassywidgets.data.RingSource.BATTERY -> if (sys.charging) "⚡" else "🔋"
+            com.glassywidgets.data.RingSource.DAY -> "☀"
+            com.glassywidgets.data.RingSource.HUMIDITY -> "💧"
+            com.glassywidgets.data.RingSource.PRECIP -> "☔"
+        }
+        return "$icon$pct%"
     }
 
     /** Agrupa elementos en filas según la opción "misma fila". */
@@ -170,12 +280,20 @@ object DesignLogic {
     // ---------- Colores y recursos ----------
 
     /** ARGB del elemento para estilos no Material You. */
-    fun colorArgb(e: WidgetElement, d: WidgetDesign): Int = when (e.colorRole) {
-        ColorRole.TEXT -> d.textColor.toInt()
-        ColorRole.ACCENT -> d.accentColor.toInt()
-        ColorRole.MUTED -> ColorUtils.setAlphaComponent(d.textColor.toInt(), 184)
-        ColorRole.CUSTOM -> e.customColor.toInt()
+    fun colorArgb(e: WidgetElement, d: WidgetDesign): Int {
+        val base = when (e.colorRole) {
+            ColorRole.TEXT -> d.textColor.toInt()
+            ColorRole.ACCENT -> d.accentColor.toInt()
+            ColorRole.MUTED -> ColorUtils.setAlphaComponent(d.textColor.toInt(), 184)
+            ColorRole.CUSTOM -> e.customColor.toInt()
+        }
+        return withAlpha(base, e.alpha)
     }
+
+    /** Multiplica el alfa de un color ARGB. */
+    fun withAlpha(argb: Int, alpha: Float): Int =
+        if (alpha >= 0.999f) argb
+        else ColorUtils.setAlphaComponent(argb, ((argb ushr 24) * alpha.coerceIn(0f, 1f)).roundToInt())
 
     fun clockLayout(font: FontOpt): Int = when (font) {
         FontOpt.THIN -> R.layout.tc_thin
@@ -213,6 +331,8 @@ object DesignLogic {
     // ---------- Escala automática ----------
 
     private fun rowHeight(e: WidgetElement): Float = when (e.type) {
+        ElementType.SHAPE, ElementType.PHOTO -> e.h * 120f
+        ElementType.RING -> e.size + 4f
         ElementType.DIVIDER -> 9f
         ElementType.SPACER -> e.size.toFloat()
         ElementType.ANALOG_CLOCK -> e.size + 4f
@@ -223,6 +343,8 @@ object DesignLogic {
     }
 
     private fun widthOf(e: WidgetElement, w: WeatherData?): Float = when (e.type) {
+        ElementType.SHAPE, ElementType.PHOTO -> 0f
+        ElementType.RING -> e.size.toFloat()
         ElementType.DIVIDER, ElementType.SPACER -> 0f
         ElementType.DAY_PROGRESS, ElementType.BATTERY_BAR -> 40f
         ElementType.HOURLY, ElementType.DAILY -> e.count * e.size * 2.3f
@@ -238,6 +360,7 @@ object DesignLogic {
 
     /** Factor de escala para que el diseño quepa en el tamaño real del widget. */
     fun scale(d: WidgetDesign, widthDp: Float, heightDp: Float, w: WeatherData?): Float {
+        if (d.layout == LayoutMode.FREE) return freeScale(d, widthDp, heightDp)
         val geo = geometry(d, widthDp)
         val innerH = heightDp - d.padding * 2f
         var s = 1f

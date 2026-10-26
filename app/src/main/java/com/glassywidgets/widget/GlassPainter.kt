@@ -13,6 +13,7 @@ import android.graphics.Shader
 import androidx.core.graphics.ColorUtils
 import com.glassywidgets.data.BgStyle
 import com.glassywidgets.data.WidgetDesign
+import com.glassywidgets.data.WidgetElement
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -30,8 +31,8 @@ object GlassPainter {
     private const val MAX_PIXELS = 700_000f // límite seguro para RemoteViews
 
     fun render(context: Context, widthDp: Float, heightDp: Float, d: WidgetDesign): Bitmap {
-        val wDp = widthDp.coerceAtLeast(40f)
-        val hDp = heightDp.coerceAtLeast(40f)
+        val wDp = widthDp.coerceAtLeast(4f)
+        val hDp = heightDp.coerceAtLeast(4f)
         var scale = context.resources.displayMetrics.density
         if (wDp * hDp * scale * scale > MAX_PIXELS) scale = sqrt(MAX_PIXELS / (wDp * hDp))
         val w = max(1, (wDp * scale).roundToInt())
@@ -141,6 +142,63 @@ object GlassPainter {
         // brillo superior
         p.shader = LinearGradient(0f, 0f, 0f, h.toFloat(), alpha(Color.WHITE, 0.35f), Color.TRANSPARENT, Shader.TileMode.CLAMP)
         c.drawRoundRect(RectF(0f, 0f, fw, h * 0.6f), r, r, p)
+        return bmp
+    }
+
+    /** Forma decorativa (cápsula/rectángulo/círculo) con el mismo motor de cristal. */
+    fun shape(context: Context, e: WidgetElement, widthDp: Float, heightDp: Float): Bitmap =
+        render(
+            context, widthDp, heightDp,
+            WidgetDesign(
+                style = if (e.shapeStyle == BgStyle.MATERIAL_YOU) BgStyle.GLASS else e.shapeStyle,
+                color1 = e.customColor,
+                color2 = e.customColor2,
+                opacity = e.opacity,
+                cornerRadius = e.radius.coerceAtMost((minOf(widthDp, heightDp) / 2f).toInt().coerceAtLeast(0)),
+                rimLight = true,
+            ),
+        )
+
+    /** Foto recortada al centro con esquinas redondeadas (o degradado si no hay foto). */
+    fun photo(context: Context, e: WidgetElement, widthDp: Float, heightDp: Float): Bitmap {
+        val d = context.resources.displayMetrics.density.coerceAtMost(2.5f)
+        var w = max(4, (widthDp * d).roundToInt())
+        var h = max(4, (heightDp * d).roundToInt())
+        val f = sqrt((w.toFloat() * h) / MAX_PIXELS).coerceAtLeast(1f)
+        w = (w / f).roundToInt(); h = (h / f).roundToInt()
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        val r = (e.radius * d / f).coerceAtMost(minOf(w, h) / 2f)
+        val clip = Path().apply { addRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), r, r, Path.Direction.CW) }
+        c.clipPath(clip)
+        val src = com.glassywidgets.data.PhotoStore.load(e.text)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        if (src == null) {
+            p.shader = LinearGradient(0f, 0f, w.toFloat(), h.toFloat(), e.customColor.toInt(), e.customColor2.toInt(), Shader.TileMode.CLAMP)
+            c.drawRect(0f, 0f, w.toFloat(), h.toFloat(), p)
+        } else {
+            val scale = max(w.toFloat() / src.width, h.toFloat() / src.height)
+            val sw = src.width * scale
+            val sh = src.height * scale
+            val dst = RectF((w - sw) / 2f, (h - sh) / 2f, (w + sw) / 2f, (h + sh) / 2f)
+            c.drawBitmap(src, null, dst, p)
+        }
+        return out
+    }
+
+    /** Anillo de progreso. */
+    fun ring(context: Context, sizeDp: Float, fraction: Float, fg: Int, track: Int): Bitmap {
+        val d = context.resources.displayMetrics.density.coerceAtMost(3f)
+        val s = max(8, (sizeDp * d).roundToInt())
+        val bmp = Bitmap.createBitmap(s, s, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val stroke = s * 0.11f
+        val rect = RectF(stroke / 2, stroke / 2, s - stroke / 2, s - stroke / 2)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = stroke; strokeCap = Paint.Cap.ROUND }
+        p.color = track
+        c.drawArc(rect, 0f, 360f, false, p)
+        p.color = fg
+        c.drawArc(rect, -90f, 360f * fraction.coerceIn(0.005f, 1f), false, p)
         return bmp
     }
 
