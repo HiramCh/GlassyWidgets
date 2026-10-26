@@ -3,8 +3,10 @@ name: Compilar APK
 on:
   push:
     branches: [ main ]
-  pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -25,9 +27,30 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk GlassyWidgets.apk
 
-      - name: Subir APK
+      - name: Subir APK (artefacto)
         uses: actions/upload-artifact@v4
         with:
           name: GlassyWidgets-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: GlassyWidgets.apk
+
+      - name: Publicar en Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Glassy Widgets (build ${{ github.run_number }})
+          body: APK de depuración compilado automáticamente desde ${{ github.sha }}.
+          files: GlassyWidgets.apk
+          make_latest: true
+
+      - name: Guardar APK en la rama "builds"
+        run: |
+          mkdir /tmp/out && cp GlassyWidgets.apk /tmp/out/
+          cd /tmp/out
+          git init -q -b builds
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add GlassyWidgets.apk
+          git commit -q -m "APK build ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" builds
