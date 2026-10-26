@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Glassy Widgets</string>
+    <string name="widget_clock">Reloj Glass</string>
+    <string name="widget_weather">Clima Glass</string>
+    <string name="widget_combined">Reloj + Clima</string>
+    <string name="widget_custom">Mi diseño</string>
+    <string name="widget_clock_desc">Hora y fecha con efecto cristal o Material You</string>
+    <string name="widget_weather_desc">Temperatura, condición y máx/mín</string>
+    <string name="widget_combined_desc">Hora, fecha y clima en un solo widget</string>
+    <string name="widget_custom_desc">Un widget que diseñaste tú en la app</string>
+</resources>
