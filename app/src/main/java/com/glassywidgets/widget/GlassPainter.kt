@@ -124,6 +124,26 @@ object GlassPainter {
         p.shader = null
     }
 
+    /** Barra de progreso tipo cápsula (día, batería). */
+    fun bar(context: Context, widthDp: Float, heightDp: Float, fraction: Float, fg: Int, track: Int): Bitmap {
+        val d = context.resources.displayMetrics.density.coerceAtMost(3f)
+        val w = max(2, (widthDp.coerceAtLeast(10f) * d).roundToInt())
+        val h = max(2, (heightDp.coerceAtLeast(2f) * d).roundToInt())
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val r = h / 2f
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        p.color = track
+        c.drawRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), r, r, p)
+        val fw = (w * fraction.coerceIn(0f, 1f)).coerceAtLeast(h.toFloat())
+        p.shader = LinearGradient(0f, 0f, fw, 0f, alpha(fg, 0.75f), fg, Shader.TileMode.CLAMP)
+        c.drawRoundRect(RectF(0f, 0f, fw, h.toFloat()), r, r, p)
+        // brillo superior
+        p.shader = LinearGradient(0f, 0f, 0f, h.toFloat(), alpha(Color.WHITE, 0.35f), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+        c.drawRoundRect(RectF(0f, 0f, fw, h * 0.6f), r, r, p)
+        return bmp
+    }
+
     private fun alpha(color: Int, a: Float): Int =
         ColorUtils.setAlphaComponent(color, (a.coerceIn(0f, 1f) * 255).roundToInt())
 }

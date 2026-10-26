@@ -10,13 +10,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.glassywidgets.data.LayoutMode
 import com.glassywidgets.data.Templates
 import com.glassywidgets.data.WidgetDesign
 import com.glassywidgets.data.newId
@@ -44,49 +45,58 @@ import com.glassywidgets.ui.MainViewModel
 import com.glassywidgets.ui.components.DesignPreview
 import com.glassywidgets.ui.components.GlassCard
 import com.glassywidgets.ui.components.ScreenHeader
+import com.glassywidgets.ui.components.WallpaperStage
+import com.glassywidgets.ui.components.wallpaperAt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateScreen(vm: MainViewModel, onEdit: (WidgetDesign) -> Unit) {
     val designs by vm.designs.collectAsStateWithLifecycle()
     val weather by vm.weather.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     var showNew by remember { mutableStateOf(false) }
     var toDelete by remember { mutableStateOf<WidgetDesign?>(null) }
+    val wall = wallpaperAt(settings.wallpaper)
 
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item { ScreenHeader("Crear", "Diseña tus widgets elemento por elemento") }
+        item { ScreenHeader("Crear", "Diseña tus widgets: columnas, alineación, animaciones y más") }
         item {
             GlassCard(Modifier.fillMaxWidth(), onClick = { showNew = true }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Add, null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.size(12.dp))
+                    Icon(Icons.Filled.Add, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                    Spacer(Modifier.width(12.dp))
                     Column {
                         Text("Nuevo diseño", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        Text("Empieza en blanco o desde una plantilla", style = MaterialTheme.typography.bodyMedium)
+                        Text("Empieza en blanco o desde una de ${Templates.starterDesigns.size} plantillas", style = MaterialTheme.typography.bodyMedium)
                     }
                 }
             }
         }
         items(designs, key = { it.id }) { d ->
-            GlassCard(Modifier.fillMaxWidth()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(d.name, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            GlassCard(Modifier.fillMaxWidth().animateItem(), onClick = { onEdit(d) }, contentPadding = PaddingValues(12.dp)) {
+                WallpaperStage(wall, Modifier.fillMaxWidth().height(190.dp), animated = false) {
+                    DesignPreview(d, weather, Modifier.padding(14.dp).fillMaxWidth().height(150.dp))
+                }
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(d.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "${d.style.label} · ${if (d.layout == LayoutMode.SPLIT) "2 columnas" else "1 columna"} · ${d.elements.size} elementos",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     IconButton(onClick = { onEdit(d) }) { Icon(Icons.Filled.Edit, "Editar") }
                     IconButton(onClick = { toDelete = d }) { Icon(Icons.Filled.Delete, "Eliminar") }
                 }
-                Spacer(Modifier.height(8.dp))
-                DesignPreview(d, weather, Modifier.fillMaxWidth().height(150.dp))
-                Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilledTonalButton(onClick = { onEdit(d.copy(id = newId(), name = d.name + " (copia)")) }, modifier = Modifier.weight(1f)) {
                         Text("Duplicar")
                     }
-                    Button(onClick = { vm.pinCustom(d) }, modifier = Modifier.weight(1f)) {
-                        Text("Añadir a inicio")
-                    }
+                    Button(onClick = { vm.pinCustom(d) }, modifier = Modifier.weight(1f)) { Text("Añadir a inicio") }
                 }
             }
         }
@@ -99,7 +109,7 @@ fun CreateScreen(vm: MainViewModel, onEdit: (WidgetDesign) -> Unit) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item { Text("Empieza desde…", style = MaterialTheme.typography.titleLarge) }
+                item { Text("Empieza desde…", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold) }
                 items(listOf(Templates.blank) + Templates.starterDesigns, key = { "new_" + it.id }) { t ->
                     GlassCard(
                         Modifier.fillMaxWidth(),
@@ -107,15 +117,12 @@ fun CreateScreen(vm: MainViewModel, onEdit: (WidgetDesign) -> Unit) {
                             showNew = false
                             onEdit(t.copy(id = newId(), name = if (t.id == Templates.blank.id) "Nuevo diseño" else t.name))
                         },
-                        contentPadding = PaddingValues(12.dp),
+                        contentPadding = PaddingValues(10.dp),
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Star, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.size(6.dp))
-                            Text(t.name, style = MaterialTheme.typography.titleSmall)
+                        Text(t.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
+                        WallpaperStage(wall, Modifier.fillMaxWidth().height(160.dp), animated = false) {
+                            DesignPreview(t, weather, Modifier.padding(12.dp).fillMaxWidth().height(130.dp))
                         }
-                        Spacer(Modifier.height(8.dp))
-                        DesignPreview(t, weather, Modifier.fillMaxWidth().height(120.dp).padding(horizontal = 4.dp))
                     }
                 }
             }

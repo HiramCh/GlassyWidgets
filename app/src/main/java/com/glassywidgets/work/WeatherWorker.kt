@@ -56,3 +56,19 @@ class WeatherWorker(context: Context, params: WorkerParameters) : CoroutineWorke
         }
     }
 }
+
+/** Redibuja los widgets cada 15 min (saludo, progreso del día, batería). */
+class WidgetTickWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
+    override suspend fun doWork(): Result {
+        WidgetUpdater.updateAll(applicationContext)
+        return Result.success()
+    }
+
+    companion object {
+        fun schedule(context: Context) {
+            val request = PeriodicWorkRequestBuilder<WidgetTickWorker>(15, TimeUnit.MINUTES).build()
+            WorkManager.getInstance(context)
+                .enqueueUniquePeriodicWork("widgets_tick", ExistingPeriodicWorkPolicy.KEEP, request)
+        }
+    }
+}

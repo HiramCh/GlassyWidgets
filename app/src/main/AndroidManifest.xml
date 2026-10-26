@@ -80,5 +80,41 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/custom_widget_info" />
         </receiver>
+        <receiver
+            android:name=".widget.AnalogWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_analog">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/analog_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.ForecastWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_forecast">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/forecast_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.SystemEventsReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
+                <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
+                <action android:name="android.app.action.NEXT_ALARM_CLOCK_CHANGED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

@@ -9,4 +9,8 @@
     <string name="widget_weather_desc">Temperatura, condición y máx/mín</string>
     <string name="widget_combined_desc">Hora, fecha y clima en un solo widget</string>
     <string name="widget_custom_desc">Un widget que diseñaste tú en la app</string>
+    <string name="widget_analog">Analógico Glass</string>
+    <string name="widget_forecast">Pronóstico Glass</string>
+    <string name="widget_analog_desc">Reloj de manecillas en vivo con fecha y clima</string>
+    <string name="widget_forecast_desc">Clima de las próximas horas</string>
 </resources>

@@ -1,8 +1,10 @@
 package com.glassywidgets.widget
 
 import android.appwidget.AppWidgetManager
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.datastore.preferences.core.Preferences
@@ -25,11 +27,15 @@ import androidx.glance.state.PreferencesGlanceStateDefinition
 import com.glassywidgets.MainActivity
 import com.glassywidgets.data.AppSettings
 import com.glassywidgets.data.Repository
+import com.glassywidgets.data.SystemInfo
 import com.glassywidgets.data.Templates
 import com.glassywidgets.data.WidgetDesign
 import com.glassywidgets.data.withGlobal
 import com.glassywidgets.work.WeatherWorker
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * Base para todos los widgets: cada uno solo decide QUÉ diseño mostrar;
@@ -67,6 +73,7 @@ abstract class DesignWidget : GlanceAppWidget() {
                 GlanceDesign(
                     design = design,
                     weather = weather,
+                    sys = SystemInfo.read(context),
                     modifier = GlanceModifier.clickable(actionStartActivity<MainActivity>()),
                 )
             }
@@ -79,9 +86,19 @@ class ClockWidget : DesignWidget() {
         Templates.builtinClock.withGlobal(settings)
 }
 
+class AnalogWidget : DesignWidget() {
+    override fun resolve(widgetState: Preferences, settings: AppSettings, designs: List<WidgetDesign>, lastDesignId: String?) =
+        Templates.builtinAnalog.withGlobal(settings)
+}
+
 class WeatherWidget : DesignWidget() {
     override fun resolve(widgetState: Preferences, settings: AppSettings, designs: List<WidgetDesign>, lastDesignId: String?) =
         Templates.builtinWeather.withGlobal(settings)
+}
+
+class ForecastWidget : DesignWidget() {
+    override fun resolve(widgetState: Preferences, settings: AppSettings, designs: List<WidgetDesign>, lastDesignId: String?) =
+        Templates.builtinForecast.withGlobal(settings)
 }
 
 class CombinedWidget : DesignWidget() {
@@ -119,14 +136,32 @@ abstract class BaseReceiver : GlanceAppWidgetReceiver() {
 }
 
 class ClockWidgetReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = ClockWidget() }
+class AnalogWidgetReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = AnalogWidget() }
 class WeatherWidgetReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = WeatherWidget() }
+class ForecastWidgetReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = ForecastWidget() }
 class CombinedWidgetReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = CombinedWidget() }
 class CustomWidgetReceiver : BaseReceiver() { override val glanceAppWidget: GlanceAppWidget = CustomWidget() }
+
+/** Refresca los widgets cuando cambia algo del teléfono (cargador, alarma, zona horaria). */
+class SystemEventsReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.Default).launch {
+            try {
+                WidgetUpdater.updateAll(context)
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+}
 
 object WidgetUpdater {
     suspend fun updateAll(context: Context) {
         runCatching { ClockWidget().updateAll(context) }
+        runCatching { AnalogWidget().updateAll(context) }
         runCatching { WeatherWidget().updateAll(context) }
+        runCatching { ForecastWidget().updateAll(context) }
         runCatching { CombinedWidget().updateAll(context) }
         runCatching { CustomWidget().updateAll(context) }
     }
@@ -138,12 +173,15 @@ data class BuiltinWidget(
     val description: String,
     val design: WidgetDesign,
     val receiver: Class<out GlanceAppWidgetReceiver>,
+    val tall: Boolean = false,
 )
 
 val builtinWidgets = listOf(
-    BuiltinWidget("Reloj", "Hora y fecha en vivo", Templates.builtinClock, ClockWidgetReceiver::class.java),
-    BuiltinWidget("Clima", "Temperatura, condición y máx/mín", Templates.builtinWeather, WeatherWidgetReceiver::class.java),
-    BuiltinWidget("Reloj + Clima", "Todo en uno", Templates.builtinCombined, CombinedWidgetReceiver::class.java),
+    BuiltinWidget("Reloj + Clima", "Partido a la mitad, con carrusel animado", Templates.builtinCombined, CombinedWidgetReceiver::class.java),
+    BuiltinWidget("Analógico", "Manecillas en vivo con segundero", Templates.builtinAnalog, AnalogWidgetReceiver::class.java),
+    BuiltinWidget("Pronóstico", "Las próximas 6 horas", Templates.builtinForecast, ForecastWidgetReceiver::class.java),
+    BuiltinWidget("Reloj", "Hora y fecha grandes", Templates.builtinClock, ClockWidgetReceiver::class.java),
+    BuiltinWidget("Clima", "Temperatura, condición y máx/mín", Templates.builtinWeather, WeatherWidgetReceiver::class.java, tall = true),
 )
 
 object WidgetPin {
